@@ -1,0 +1,264 @@
+name: E2E Tests
+
+on:
+  workflow_call:
+    secrets:
+      PLAYWRIGHT_SERVICE_URL:
+        required: false
+      PLAYWRIGHT_SERVICE_ACCESS_TOKEN:
+        required: false
+      ENTERPRISE_LICENSE_KEY:
+        required: true
+      # Add other secrets if necessary
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    name: Run E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: pgvector/pgvector@sha256:9ae02a756ba16a2d69dd78058e25915e36e189bb36ddf01ceae86390d7ed786a
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      valkey:
+        image: valkey/valkey@sha256:12ba4f45a7c3e1d0f076acd616cb230834e75a77e8516dde382720af32832d6d
+        ports:
+          - 6379:6379
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+          allowed-endpoints: |
+            ee.formbricks.com:443
+            registry-1.docker.io:443
+            docker.io:443
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/dangerous-git-checkout
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+
+      - name: Setup Node.js (version from .nvmrc)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --config.platform=linux --config.architecture=x64
+        shell: bash
+
+      - name: Create .env
+        run: pnpm dev:setup
+        shell: bash
+
+      - name: Fill ENTERPRISE_LICENSE_KEY and E2E_TESTING in .env
+        run: |
+          sed -i "s/ENTERPRISE_LICENSE_KEY=.*/ENTERPRISE_LICENSE_KEY=${{ secrets.ENTERPRISE_LICENSE_KEY }}/" .env
+          sed -i "s|REDIS_URL=.*|REDIS_URL=redis://localhost:6379|" .env
+          echo "" >> .env
+          echo "E2E_TESTING=1" >> .env
+          echo "S3_REGION=us-east-1" >> .env
+          echo "S3_BUCKET_NAME=formbricks-e2e" >> .env
+          echo "S3_ENDPOINT_URL=http://localhost:9000" >> .env
+          echo "S3_ACCESS_KEY=devrustfs-service" >> .env
+          echo "S3_SECRET_KEY=devrustfs-service123" >> .env
+          echo "S3_FORCE_PATH_STYLE=1" >> .env
+        shell: bash
+
+      - name: Start RustFS Server
+        run: |
+          set -euo pipefail
+
+          # Start RustFS server in background
+          docker run -d \
+            --name rustfs-server \
+            -p 9000:9000 \
+            -p 9001:9001 \
+            -e RUSTFS_ACCESS_KEY=devrustfs \
+            -e RUSTFS_SECRET_KEY=devrustfs123 \
+            -e RUSTFS_ADDRESS=:9000 \
+            -e RUSTFS_CONSOLE_ENABLE=true \
+            -e RUSTFS_CONSOLE_ADDRESS=:9001 \
+            rustfs/rustfs:1.0.0-alpha.93 \
+            /data
+
+          echo "RustFS server started"
+
+      - name: Bootstrap RustFS bucket and browser upload CORS
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            --network host \
+            --entrypoint /bin/sh \
+            -e RUSTFS_ENDPOINT_URL=http://127.0.0.1:9000 \
+            -e RUSTFS_ADMIN_USER=devrustfs \
+            -e RUSTFS_ADMIN_PASSWORD=devrustfs123 \
+            -e RUSTFS_SERVICE_USER=devrustfs-service \
+            -e RUSTFS_SERVICE_PASSWORD=devrustfs-service123 \
+            -e RUSTFS_BUCKET_NAME=formbricks-e2e \
+            -e RUSTFS_POLICY_NAME=formbricks-e2e-policy \
+            -e RUSTFS_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000 \
+            -v "$PWD/docker/rustfs-init.sh:/tmp/rustfs-init.sh:ro" \
+            minio/mc@sha256:95b5f3f7969a5c5a9f3a700ba72d5c84172819e13385aaf916e237cf111ab868 \
+            /tmp/rustfs-init.sh
+
+      # NOTE: no build cache here. We measured caching Next's .next/cache
+      # incremental compiler cache too — warm build (4m17s) was no faster than
+      # cold (3m46s), because the Turbo-orchestrated `pnpm build` doesn't reuse
+      # it in this setup (and there's no Turbo remote cache). Build is ~4min
+      # regardless; a real reduction needs a Turbo cache backend, not local
+      # actions/cache.
+
+      # Cache the downloaded browser binaries so re-runs skip the ~100MB
+      # Chromium download. `--with-deps` below still runs the (uncacheable) apt
+      # step, but a cache hit avoids the browser fetch itself.
+      - name: Cache Playwright browsers
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Build App (with Playwright browser install in parallel)
+        run: |
+          set -euo pipefail
+          # Install Playwright browsers + OS deps concurrently with the Next.js
+          # build. Both are largely I/O-bound, so overlapping them shaves the
+          # browser-install time (~1-2 min) off the critical path. `wait`
+          # surfaces a non-zero exit from either process.
+          pnpm exec playwright install --with-deps &
+          PW_INSTALL_PID=$!
+          pnpm build --filter=@formbricks/web...
+          wait "$PW_INSTALL_PID"
+
+      - name: Apply Prisma Migrations
+        run: |
+          # @formbricks/database is already built by the "Build App" step above,
+          # so run the migration runner directly instead of db:migrate:dev
+          # (which would rebuild + re-generate the package unnecessarily).
+          # db:migrate:ci was added in #8627; PR branches cut before it lack the
+          # script (this workflow runs from the base ref against the PR-head code),
+          # so fall back to db:migrate:dev, which every older branch already has.
+          if node -e "process.exit(require('./packages/database/package.json').scripts['db:migrate:ci'] ? 0 : 1)"; then
+            pnpm --filter=@formbricks/database db:migrate:ci
+          else
+            echo "::warning::db:migrate:ci absent on this ref (predates #8627); falling back to db:migrate:dev"
+            pnpm --filter=@formbricks/database db:migrate:dev
+          fi
+
+      - name: Run Rate Limiter Load Tests
+        run: |
+          echo "Running rate limiter load tests with Redis/Valkey..."
+          cd apps/web && pnpm vitest run modules/core/rate-limit/rate-limit-load.test.ts
+        shell: bash
+
+      - name: Run Cache Integration Tests
+        run: |
+          echo "Running cache integration tests with Redis/Valkey..."
+          cd packages/cache && pnpm vitest run src/cache-integration.test.ts
+        shell: bash
+
+      - name: Check for Enterprise License
+        run: |
+          LICENSE_KEY=$(grep '^ENTERPRISE_LICENSE_KEY=' .env | cut -d'=' -f2-)
+          if [ -z "$LICENSE_KEY" ]; then
+            echo "::error::ENTERPRISE_LICENSE_KEY in .env is empty. Please check your secret configuration."
+            exit 1
+          fi
+          echo "License key length: ${#LICENSE_KEY}"
+
+      - name: Disable rate limiting for E2E tests
+        run: |
+          echo "RATE_LIMITING_DISABLED=1" >> .env
+          echo "Rate limiting disabled for E2E tests"
+        shell: bash
+
+      - name: Run App
+        run: |
+          echo "Starting app with enterprise license..."
+          NODE_ENV=test pnpm start --filter=@formbricks/web | tee app.log 2>&1 &
+          sleep 10  # Optional: gives some buffer for the app to start
+          for attempt in {1..10}; do
+            if [ $(curl -o /dev/null -s -w "%{http_code}" http://localhost:3000/health) -eq 200 ]; then
+              echo "Application is ready."
+              break
+            fi
+            if [ $attempt -eq 10 ]; then
+              echo "Application failed to start in time."
+              exit 1
+            fi
+            echo "Still waiting for the application to be ready..."
+            sleep 10
+          done
+
+      - name: Determine Playwright execution mode
+        shell: bash
+        env:
+          PLAYWRIGHT_SERVICE_URL: ${{ secrets.PLAYWRIGHT_SERVICE_URL }}
+          PLAYWRIGHT_SERVICE_ACCESS_TOKEN: ${{ secrets.PLAYWRIGHT_SERVICE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${PLAYWRIGHT_SERVICE_URL}" && -n "${PLAYWRIGHT_SERVICE_ACCESS_TOKEN}" ]]; then
+            echo "PW_MODE=service" >> "$GITHUB_ENV"
+          else
+            echo "PW_MODE=local" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run E2E Tests (Playwright Service)
+        if: env.PW_MODE == 'service'
+        env:
+          PLAYWRIGHT_SERVICE_URL: ${{ secrets.PLAYWRIGHT_SERVICE_URL }}
+          PLAYWRIGHT_SERVICE_ACCESS_TOKEN: ${{ secrets.PLAYWRIGHT_SERVICE_ACCESS_TOKEN }}
+          CI: true
+        run: pnpm test-e2e:azure
+
+      - name: Run E2E Tests (Local)
+        if: env.PW_MODE == 'local'
+        env:
+          CI: true
+        run: |
+          pnpm test:e2e
+
+      - uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      - uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        if: failure()
+        with:
+          name: app-logs
+          if-no-files-found: ignore
+          path: app.log
+
+      - name: Output App Logs
+        if: failure()
+        run: |
+          if [ -f app.log ]; then
+            cat app.log
+          else
+            echo "app.log not found because the Run App step did not execute or failed before log creation."
+          fi

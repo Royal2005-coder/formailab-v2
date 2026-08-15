@@ -1,0 +1,38 @@
+{
+  "$schema": "https://lingo.dev/schema/i18n.json",
+  "buckets": {
+    "json": {
+      "include": ["locales/[locale].json"]
+    }
+  },
+  "locale": {
+    "source": "en-US",
+    "targets": [
+      "vi-VN",
+      "de-DE",
+      "es-ES",
+      "fr-FR",
+      "hu-HU",
+      "ja-JP",
+      "ko-KR",
+      "nl-NL",
+      "pt-BR",
+      "pt-PT",
+      "ro-RO",
+      "ru-RU",
+      "sv-SE",
+      "tr-TR",
+      "zh-Hans-CN",
+      "zh-Hant-TW"
+    ]
+  },
+  "provider": {
+    "id": "google",
+    "model": "gemini-2.5-flash-lite",
+    "prompt": "Translate {source} into natural, concise {target} for the AILAB Survey web application. Preserve ICU variables, HTML, Markdown, URLs, product names, and technical terms exactly. Use consistent professional SaaS and survey-research terminology. For ko-KR, use standard South Korean spelling and a professional polite UI tone.",
+    "settings": {
+      "temperature": 0
+    }
+  },
+  "version": 1.8
+}

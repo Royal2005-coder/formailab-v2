@@ -1,0 +1,52 @@
+{
+  "name": "@formbricks/i18n-utils",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "homepage": "https://formbricks.com",
+  "license": "MIT",
+  "description": "Utility functions for multilingual support in Formbricks projects",
+  "main": "dist/index.cjs.js",
+  "module": "dist/index.es.js",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/formbricks/formbricks"
+  },
+  "keywords": [
+    "Formbricks",
+    "i18n",
+    "internationalization",
+    "localization"
+  ],
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "go": "vite build --watch --mode dev",
+    "clean": "rimraf .turbo node_modules coverage dist",
+    "lint:report": "eslint . --format json --output-file ../../lint-results/i18n-utils.json",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && vite build",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "scan-translations": "tsx src/scan-translations.ts"
+  },
+  "dependencies": {
+    "glob": "^13.0.6",
+    "object-hash": "^3.0.0"
+  },
+  "devDependencies": {
+    "@formbricks/config-typescript": "workspace:*",
+    "@formbricks/eslint-config": "workspace:*",
+    "@types/node": "^25.4.0",
+    "@types/object-hash": "^3.0.6",
+    "tsx": "^4.21.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.5",
+    "vitest": "4.1.6"
+  }
+}

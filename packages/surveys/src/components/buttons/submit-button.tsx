@@ -1,0 +1,83 @@
+import { type ButtonHTMLAttributes } from "preact";
+import { useRef } from "preact/compat";
+import { useCallback, useEffect, useState } from "preact/hooks";
+import { useTranslation } from "react-i18next";
+import { Button } from "./button";
+
+interface SubmitButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  buttonLabel?: string;
+  isLastQuestion: boolean;
+  focus?: boolean;
+}
+
+export function SubmitButton({
+  buttonLabel,
+  isLastQuestion,
+  tabIndex = 0,
+  focus = false,
+  onClick,
+  disabled,
+  type,
+  ...props
+}: Readonly<SubmitButtonProps>) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // throttle the button submit to prevent multiple submissions
+  // works by setting a timeout to reset the isProcessing state
+  // TODO: Refactor
+  useEffect(() => {
+    if (isProcessing) {
+      const timer = setTimeout(() => {
+        setIsProcessing(false);
+      }, 300);
+
+      return () => {
+        clearTimeout(timer);
+      };
+    }
+  }, [isProcessing]);
+  const { t } = useTranslation();
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !disabled && !isProcessing) {
+        event.preventDefault();
+        setIsProcessing(true);
+        const button = buttonRef.current;
+        if (button) {
+          button.click();
+        }
+      }
+    },
+    [disabled, isProcessing]
+  );
+
+  useEffect(() => {
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
+  useEffect(() => {
+    if (buttonRef.current && focus) {
+      setTimeout(() => {
+        buttonRef.current?.focus();
+      }, 200);
+    }
+  }, [focus]);
+
+  return (
+    <Button
+      {...props}
+      dir="auto"
+      variant="primary"
+      ref={buttonRef}
+      type={type}
+      tabIndex={tabIndex}
+      autoFocus={focus}
+      onClick={onClick}
+      disabled={disabled}>
+      {buttonLabel || (isLastQuestion ? t("common.finish") : t("common.next"))}
+    </Button>
+  );
+}

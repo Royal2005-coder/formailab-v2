@@ -1,0 +1,26 @@
+{
+  "name": "@formbricks/types",
+  "version": "0.0.0",
+  "private": true,
+  "main": "index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./integration": "./integration/index.ts",
+    "./*": "./*.ts"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf node_modules .turbo"
+  },
+  "dependencies": {
+    "zod": "4.3.6",
+    "zod-openapi": "5.4.6",
+    "node-html-parser": "7.1.0"
+  },
+  "devDependencies": {
+    "@formbricks/config-typescript": "workspace:*",
+    "typescript": "5.9.3"
+  }
+}

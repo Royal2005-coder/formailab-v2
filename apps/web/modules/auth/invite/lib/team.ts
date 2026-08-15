@@ -1,0 +1,52 @@
+import "server-only";
+import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
+import { DatabaseError } from "@formbricks/types/errors";
+import { getAccessFlags } from "@/lib/membership/utils";
+import { CreateMembershipInvite } from "@/modules/auth/invite/types/invites";
+
+export const createTeamMembership = async (invite: CreateMembershipInvite, userId: string): Promise<void> => {
+  const teamIds = invite.teamIds || [];
+  const userMembershipRole = invite.role;
+  const { isOwner, isManager } = getAccessFlags(userMembershipRole);
+
+  const validTeamIds: string[] = [];
+  const validWorkspaceIds: string[] = [];
+
+  const isOwnerOrManager = isOwner || isManager;
+  try {
+    for (const teamId of teamIds) {
+      const team = await prisma.team.findUnique({
+        where: {
+          id: teamId,
+        },
+        select: {
+          workspaceTeams: {
+            select: {
+              workspaceId: true,
+            },
+          },
+        },
+      });
+
+      if (team) {
+        await prisma.teamUser.create({
+          data: {
+            teamId,
+            userId,
+            role: isOwnerOrManager ? "admin" : "contributor",
+          },
+        });
+
+        validTeamIds.push(teamId);
+        validWorkspaceIds.push(...team.workspaceTeams.map((pt) => pt.workspaceId));
+      }
+    }
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      throw new DatabaseError(error.message);
+    }
+
+    throw error;
+  }
+};

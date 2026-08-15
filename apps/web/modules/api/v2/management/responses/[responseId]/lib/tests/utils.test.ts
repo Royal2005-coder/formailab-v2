@@ -1,0 +1,68 @@
+import { fileUploadQuestion, openTextQuestion, responseData, workspaceId } from "./__mocks__/utils.mock";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { logger } from "@formbricks/logger";
+import { okVoid } from "@formbricks/types/error-handlers";
+import { deleteFile } from "@/modules/storage/service";
+import { findAndDeleteUploadedFilesInResponse } from "../utils";
+
+vi.mock("@formbricks/logger", () => ({
+  logger: {
+    error: vi.fn(),
+  },
+}));
+
+vi.mock("@/modules/storage/service", () => ({
+  deleteFile: vi.fn(),
+}));
+
+describe("findAndDeleteUploadedFilesInResponse", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("delete files for file upload questions and return okVoid", async () => {
+    vi.mocked(deleteFile).mockResolvedValue({ ok: true, data: undefined });
+
+    const result = await findAndDeleteUploadedFilesInResponse(responseData, [fileUploadQuestion]);
+
+    expect(deleteFile).toHaveBeenCalledTimes(2);
+    expect(deleteFile).toHaveBeenCalledWith(workspaceId, "private", "file1.png", undefined);
+    expect(deleteFile).toHaveBeenCalledWith(workspaceId, "private", "file2.pdf", undefined);
+    expect(result).toEqual(okVoid());
+  });
+
+  test("not call deleteFile if no file upload questions match response data", async () => {
+    const result = await findAndDeleteUploadedFilesInResponse(responseData, [openTextQuestion]);
+
+    expect(deleteFile).not.toHaveBeenCalled();
+    expect(result).toEqual(okVoid());
+  });
+
+  test("handle invalid file URLs and log errors", async () => {
+    const invalidFileUrl = "https://example.com/invalid-url";
+    const responseData = {
+      [fileUploadQuestion.id]: [invalidFileUrl],
+    };
+
+    const loggerSpy = vi.spyOn(logger, "error");
+
+    const result = await findAndDeleteUploadedFilesInResponse(responseData, [fileUploadQuestion]);
+
+    expect(deleteFile).not.toHaveBeenCalled();
+    expect(loggerSpy).toHaveBeenCalled();
+    expect(result).toEqual(okVoid());
+
+    loggerSpy.mockRestore();
+  });
+
+  test("process multiple file URLs", async () => {
+    vi.mocked(deleteFile).mockResolvedValue({ ok: true, data: undefined });
+
+    const result = await findAndDeleteUploadedFilesInResponse(responseData, [fileUploadQuestion]);
+
+    expect(deleteFile).toHaveBeenCalledTimes(2);
+    expect(deleteFile).toHaveBeenNthCalledWith(1, workspaceId, "private", "file1.png", undefined);
+    expect(deleteFile).toHaveBeenNthCalledWith(2, workspaceId, "private", "file2.pdf", undefined);
+    expect(result).toEqual(okVoid());
+  });
+});

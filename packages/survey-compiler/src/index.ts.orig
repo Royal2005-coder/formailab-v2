@@ -1,0 +1,67 @@
+export {
+  CANONICAL_SURVEY_SCHEMA_VERSION,
+  ZCanonicalEnding,
+  ZCanonicalGroup,
+  ZCanonicalOption,
+  ZCanonicalQuestion,
+  ZCanonicalQuestionType,
+  ZCanonicalSurvey,
+  ZCanonicalValueType,
+  ZCanonicalVariable,
+  ZCompatibilityClass,
+  ZExternalId,
+  ZImportDiagnostic,
+  ZImportMode,
+  ZImportResult,
+  ZImportSourceLocation,
+  ZLocalizedText,
+  type TCanonicalQuestion,
+  type TCanonicalSurvey,
+  type TCompatibilityClass,
+  type TImportDiagnostic,
+  type TImportResult,
+} from "./contracts";
+export { validateCanonicalSurvey } from "./validate-canonical-survey";
+export { compileCanonicalToFormbricksPayload } from "./compile-formbricks";
+export {
+  CANONICAL_WORKBOOK_REQUIRED_COLUMNS,
+  CANONICAL_WORKBOOK_SHEETS,
+  LIME_QUESTION_TYPE_COMPATIBILITY,
+  ZCanonicalWorkbookSheet,
+  ZQuestionTypeCompatibility,
+  getMissingWorkbookColumns,
+  getQuestionTypeCompatibility,
+  type TQuestionTypeCompatibility,
+} from "./compatibility";
+export {
+  ExpressionError,
+  evaluateExpression,
+  parseExpression,
+  tokenizeExpression,
+  type TExpressionContext,
+  type TExpressionDiagnostic,
+  type TExpressionErrorCode,
+  type TExpressionLimits,
+  type TExpressionLiteral,
+  type TExpressionNode,
+  type TToken,
+  type TTokenType,
+} from "./expression";
+export {
+  evaluateCalculatedVariables,
+  simulateAdaptiveRoute,
+  type TAdaptiveContext,
+  type TAdaptiveSimulationResult,
+  type TAdaptiveValue,
+  type TCalculatedVariableTrace,
+  type TRouteTraceEntry,
+} from "./adaptive";
+export {
+  SURVEY_LIFECYCLE_STATUSES,
+  SurveyLifecycleError,
+  assertLifecycleTransition,
+  assertPublicationReady,
+  assertVersionMutable,
+  createImportIdempotencyKey,
+  type TSurveyLifecycleStatus,
+} from "./lifecycle";

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@formbricks/survey-compiler",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Canonical survey contracts and clean-room compatibility compiler for AI LAB Survey",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "expression": [
+        "dist/expression/index.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./expression": {
+      "types": "./dist/expression/index.d.ts",
+      "import": "./dist/expression.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rimraf dist && vite build && tsc --project tsconfig.build.json",
+    "clean": "rimraf .turbo node_modules coverage dist",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@formbricks/types": "workspace:*",
+    "csv-parse": "6.1.0",
+    "xlsx": "file:../../apps/web/vendor/xlsx-0.20.3.tgz",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@formbricks/config-typescript": "workspace:*",
+    "@formbricks/eslint-config": "workspace:*",
+    "@vitest/coverage-v8": "4.1.6",
+    "typescript": "5.9.3",
+    "vite": "8.0.16",
+    "vitest": "4.1.6"
+  }
+}

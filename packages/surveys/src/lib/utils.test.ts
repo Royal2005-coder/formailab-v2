@@ -1,0 +1,563 @@
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { TSurveyElementTypeEnum } from "@formbricks/types/surveys/constants";
+import type { TJsWorkspaceStateSurvey } from "../../../types/js";
+import { type TAllowedFileExtension, mimeTypes } from "../../../types/storage";
+import type { TSurveyLanguage } from "../../../types/surveys/types";
+import {
+  cn,
+  findBlockByElementId,
+  getDefaultLanguageCode,
+  getElementsFromSurveyBlocks,
+  getMimeType,
+  getShuffledChoicesIds,
+  getShuffledRowIndices,
+  isRTL,
+  isRTLLanguage,
+} from "./utils";
+
+// Mock crypto.getRandomValues for deterministic shuffle tests
+const mockGetRandomValues = vi.fn();
+vi.stubGlobal("crypto", {
+  ...(global.crypto || {}),
+  getRandomValues: mockGetRandomValues,
+});
+
+describe("getMimeType", () => {
+  Object.entries(mimeTypes).forEach(([extension, expectedMimeType]) => {
+    test(`should return "${expectedMimeType}" for extension "${extension}"`, () => {
+      expect(getMimeType(extension as TAllowedFileExtension)).toBe(expectedMimeType);
+    });
+  });
+});
+
+// Base mock for TJsWorkspaceStateSurvey to satisfy stricter type checks
+const baseMockSurvey: TJsWorkspaceStateSurvey = {
+  id: "survey1",
+  name: "Test Survey",
+  type: "link",
+  status: "inProgress",
+  questions: [],
+  blocks: [],
+  endings: [],
+  welcomeCard: { enabled: false, timeToFinish: true, showResponseCount: false },
+  variables: [],
+  styling: { overwriteThemeStyling: false },
+  recontactDays: null,
+  displayLimit: null,
+  displayPercentage: null,
+  languages: [],
+  segment: null,
+  hiddenFields: { enabled: false, fieldIds: [] },
+  workspaceOverwrites: null,
+  triggers: [],
+  displayOption: "displayOnce",
+} as unknown as TJsWorkspaceStateSurvey;
+
+describe("getDefaultLanguageCode", () => {
+  const mockSurveyLanguageEn: TSurveyLanguage = {
+    default: true,
+    enabled: true,
+    language: {
+      id: "lang1",
+      code: "en",
+      alias: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      workspaceId: "proj1",
+    },
+  };
+  const mockSurveyLanguageEs: TSurveyLanguage = {
+    default: false,
+    enabled: true,
+    language: {
+      id: "lang2",
+      code: "es",
+      alias: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      workspaceId: "proj1",
+    },
+  };
+
+  test("should return the code of the default language", () => {
+    const survey: TJsWorkspaceStateSurvey = {
+      ...baseMockSurvey,
+      languages: [mockSurveyLanguageEs, mockSurveyLanguageEn],
+    } as TJsWorkspaceStateSurvey;
+    expect(getDefaultLanguageCode(survey)).toBe("en");
+  });
+
+  test("should return undefined if no default language", () => {
+    const survey: TJsWorkspaceStateSurvey = {
+      ...baseMockSurvey,
+      languages: [{ ...mockSurveyLanguageEs, default: false }], // Ensure 'default' is explicitly false
+    } as TJsWorkspaceStateSurvey;
+    expect(getDefaultLanguageCode(survey)).toBeUndefined();
+  });
+
+  test("should return undefined if languages array is empty", () => {
+    const survey: TJsWorkspaceStateSurvey = {
+      ...baseMockSurvey,
+      languages: [],
+    } as TJsWorkspaceStateSurvey;
+    expect(getDefaultLanguageCode(survey)).toBeUndefined();
+  });
+});
+
+const setNextRandomNormalizedValue = (val: number) => {
+  mockGetRandomValues.mockImplementationOnce((typedArray: Uint32Array) => {
+    typedArray[0] = Math.floor(val * 2 ** 32);
+  });
+};
+
+describe("getShuffledRowIndices", () => {
+  beforeEach(() => {
+    mockGetRandomValues.mockReset();
+  });
+
+  test('should return unshuffled for "none"', () => {
+    expect(getShuffledRowIndices(5, "none")).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  test('should shuffle all for "all"', () => {
+    setNextRandomNormalizedValue(0.1);
+    setNextRandomNormalizedValue(0.1);
+    expect(getShuffledRowIndices(3, "all")).toEqual([1, 2, 0]);
+  });
+
+  test('should shuffle except last for "exceptLast"', () => {
+    setNextRandomNormalizedValue(0.1);
+    setNextRandomNormalizedValue(0.1);
+    expect(getShuffledRowIndices(4, "exceptLast")).toEqual([1, 2, 0, 3]);
+  });
+
+  test("should handle n=0 or n=1", () => {
+    expect(getShuffledRowIndices(0, "all")).toEqual([]);
+    expect(getShuffledRowIndices(1, "all")).toEqual([0]);
+    expect(getShuffledRowIndices(1, "exceptLast")).toEqual([0]);
+  });
+
+  test('should reverse all for "reverseOrderOccasionally" when random < 0.5', () => {
+    // getSecureRandom returns < 0.5, so the array is reversed
+    setNextRandomNormalizedValue(0.3);
+    expect(getShuffledRowIndices(4, "reverseOrderOccasionally")).toEqual([3, 2, 1, 0]);
+  });
+
+  test('should keep original order for "reverseOrderOccasionally" when random >= 0.5', () => {
+    // getSecureRandom returns >= 0.5, so the array is NOT reversed
+    setNextRandomNormalizedValue(0.7);
+    expect(getShuffledRowIndices(4, "reverseOrderOccasionally")).toEqual([0, 1, 2, 3]);
+  });
+
+  test('should preserve all elements with "reverseOrderOccasionally"', () => {
+    setNextRandomNormalizedValue(0.3);
+    const result = getShuffledRowIndices(5, "reverseOrderOccasionally");
+    expect(result).toHaveLength(5);
+    expect(result.sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  test('should reverse all except last for "reverseOrderExceptLast" when random < 0.5', () => {
+    // getSecureRandom returns < 0.5, so the array (minus last) is reversed
+    setNextRandomNormalizedValue(0.3);
+    expect(getShuffledRowIndices(4, "reverseOrderExceptLast")).toEqual([2, 1, 0, 3]);
+  });
+
+  test('should keep original order for "reverseOrderExceptLast" when random >= 0.5', () => {
+    // getSecureRandom returns >= 0.5, so the array is NOT reversed
+    setNextRandomNormalizedValue(0.7);
+    expect(getShuffledRowIndices(4, "reverseOrderExceptLast")).toEqual([0, 1, 2, 3]);
+  });
+
+  test('should always keep last element in place for "reverseOrderExceptLast"', () => {
+    setNextRandomNormalizedValue(0.3);
+    const result = getShuffledRowIndices(5, "reverseOrderExceptLast");
+    expect(result[result.length - 1]).toBe(4);
+    expect(result).toHaveLength(5);
+    expect(result.sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  test('should handle n=1 for "reverseOrderOccasionally" and "reverseOrderExceptLast"', () => {
+    setNextRandomNormalizedValue(0.3);
+    expect(getShuffledRowIndices(1, "reverseOrderOccasionally")).toEqual([0]);
+    setNextRandomNormalizedValue(0.3);
+    expect(getShuffledRowIndices(1, "reverseOrderExceptLast")).toEqual([0]);
+  });
+});
+
+describe("getShuffledChoicesIds", () => {
+  beforeEach(() => {
+    mockGetRandomValues.mockReset();
+  });
+
+  const choicesBase = [
+    { id: "c1", label: { en: "Choice 1" } },
+    { id: "c2", label: { en: "Choice 2" } },
+    { id: "c3", label: { en: "Choice 3" } },
+  ];
+  const choicesWithOther = [...choicesBase, { id: "other", label: { en: "Other" } }];
+
+  test('should return unshuffled for "none"', () => {
+    expect(getShuffledChoicesIds(choicesBase, "none")).toEqual(["c1", "c2", "c3"]);
+    expect(getShuffledChoicesIds(choicesWithOther, "none")).toEqual(["c1", "c2", "c3", "other"]);
+  });
+
+  test('should shuffle all (no "other") for "all"', () => {
+    setNextRandomNormalizedValue(0.1);
+    setNextRandomNormalizedValue(0.1);
+    expect(getShuffledChoicesIds(choicesBase, "all")).toEqual(["c2", "c3", "c1"]);
+  });
+
+  test('should shuffle all (with "other") for "all", keeping "other" last', () => {
+    setNextRandomNormalizedValue(0.1);
+    setNextRandomNormalizedValue(0.1);
+    expect(getShuffledChoicesIds(choicesWithOther, "all")).toEqual(["c2", "c3", "c1", "other"]);
+  });
+
+  test('should shuffle except last (no "other") for "exceptLast"', () => {
+    setNextRandomNormalizedValue(0.1);
+    expect(getShuffledChoicesIds(choicesBase, "exceptLast")).toEqual(["c2", "c1", "c3"]);
+  });
+
+  test('should shuffle except last (with "other") for "exceptLast", keeping "other" truly last', () => {
+    setNextRandomNormalizedValue(0.1);
+    expect(getShuffledChoicesIds(choicesWithOther, "exceptLast")).toEqual(["c2", "c1", "c3", "other"]);
+  });
+
+  test("should handle empty or single choice arrays", () => {
+    expect(getShuffledChoicesIds([], "all")).toEqual([]);
+    const singleChoice = [{ id: "s1", label: { en: "Single" } }];
+    expect(getShuffledChoicesIds(singleChoice, "all")).toEqual(["s1"]);
+    expect(getShuffledChoicesIds(singleChoice, "exceptLast")).toEqual(["s1"]);
+  });
+
+  test('should reverse all for "reverseOrderOccasionally" when random < 0.5', () => {
+    setNextRandomNormalizedValue(0.3);
+    expect(getShuffledChoicesIds(choicesBase, "reverseOrderOccasionally")).toEqual(["c3", "c2", "c1"]);
+  });
+
+  test('should keep original order for "reverseOrderOccasionally" when random >= 0.5', () => {
+    setNextRandomNormalizedValue(0.7);
+    expect(getShuffledChoicesIds(choicesBase, "reverseOrderOccasionally")).toEqual(["c1", "c2", "c3"]);
+  });
+
+  test('should preserve "other" at end with "reverseOrderOccasionally" when reversed', () => {
+    setNextRandomNormalizedValue(0.3);
+    expect(getShuffledChoicesIds(choicesWithOther, "reverseOrderOccasionally")).toEqual([
+      "c3",
+      "c2",
+      "c1",
+      "other",
+    ]);
+  });
+
+  test('should preserve all elements with "reverseOrderOccasionally"', () => {
+    setNextRandomNormalizedValue(0.3);
+    const result = getShuffledChoicesIds(choicesBase, "reverseOrderOccasionally");
+    expect(result).toHaveLength(3);
+    expect([...result].sort()).toEqual(["c1", "c2", "c3"]);
+  });
+
+  test('should reverse all except last for "reverseOrderExceptLast" when random < 0.5', () => {
+    setNextRandomNormalizedValue(0.3);
+    expect(getShuffledChoicesIds(choicesBase, "reverseOrderExceptLast")).toEqual(["c2", "c1", "c3"]);
+  });
+
+  test('should keep original order for "reverseOrderExceptLast" when random >= 0.5', () => {
+    setNextRandomNormalizedValue(0.7);
+    expect(getShuffledChoicesIds(choicesBase, "reverseOrderExceptLast")).toEqual(["c1", "c2", "c3"]);
+  });
+
+  test('should keep last regular choice in place with "reverseOrderExceptLast", "other" appended after', () => {
+    setNextRandomNormalizedValue(0.3);
+    expect(getShuffledChoicesIds(choicesWithOther, "reverseOrderExceptLast")).toEqual([
+      "c2",
+      "c1",
+      "c3",
+      "other",
+    ]);
+  });
+
+  test('should always keep last regular element in place for "reverseOrderExceptLast"', () => {
+    setNextRandomNormalizedValue(0.3);
+    const result = getShuffledChoicesIds(choicesBase, "reverseOrderExceptLast");
+    expect(result[result.length - 1]).toBe("c3");
+    expect(result).toHaveLength(3);
+    expect([...result].sort()).toEqual(["c1", "c2", "c3"]);
+  });
+});
+describe("getQuestionsFromSurvey", () => {
+  test("should return elements from blocks", () => {
+    const survey: TJsWorkspaceStateSurvey = {
+      ...baseMockSurvey,
+      blocks: [
+        {
+          id: "block1",
+          name: "Block 1",
+          elements: [
+            {
+              id: "q1",
+              type: TSurveyElementTypeEnum.OpenText,
+              headline: { en: "Question 1" },
+              required: false,
+              inputType: "text",
+              charLimit: { enabled: false },
+            },
+            {
+              id: "q2",
+              type: TSurveyElementTypeEnum.OpenText,
+              headline: { en: "Question 2" },
+              required: false,
+              inputType: "text",
+              charLimit: { enabled: false },
+            },
+          ],
+        },
+        {
+          id: "block2",
+          name: "Block 2",
+          elements: [
+            {
+              id: "q3",
+              type: TSurveyElementTypeEnum.OpenText,
+              headline: { en: "Question 3" },
+              required: false,
+              inputType: "text",
+              charLimit: { enabled: false },
+            },
+          ],
+        },
+      ],
+    };
+
+    const questions = getElementsFromSurveyBlocks(survey.blocks);
+    expect(questions).toHaveLength(3);
+    expect(questions[0].id).toBe("q1");
+    expect(questions[1].id).toBe("q2");
+    expect(questions[2].id).toBe("q3");
+  });
+
+  test("should return empty array when blocks is empty", () => {
+    const survey = {
+      ...baseMockSurvey,
+      blocks: [],
+    } as TJsWorkspaceStateSurvey;
+
+    expect(getElementsFromSurveyBlocks(survey.blocks)).toEqual([]);
+  });
+
+  test("should handle blocks with no elements", () => {
+    const survey: TJsWorkspaceStateSurvey = {
+      ...baseMockSurvey,
+      blocks: [
+        { id: "block1", name: "Block 1", elements: [] },
+        {
+          id: "block2",
+          name: "Block 2",
+          elements: [
+            {
+              id: "q1",
+              type: TSurveyElementTypeEnum.OpenText,
+              headline: { en: "Q1" },
+              required: false,
+              inputType: "text",
+              charLimit: { enabled: false },
+            },
+          ],
+        },
+      ],
+    };
+
+    const questions = getElementsFromSurveyBlocks(survey.blocks);
+    expect(questions).toHaveLength(1);
+    expect(questions[0].id).toBe("q1");
+  });
+});
+
+describe("findBlockByElementId", () => {
+  const survey: TJsWorkspaceStateSurvey = {
+    ...baseMockSurvey,
+    blocks: [
+      {
+        id: "block1",
+        name: "Block 1",
+        elements: [
+          {
+            id: "q1",
+            type: TSurveyElementTypeEnum.OpenText,
+            headline: { en: "Question 1" },
+            required: false,
+            inputType: "text",
+            charLimit: { enabled: false },
+          },
+          {
+            id: "q2",
+            type: TSurveyElementTypeEnum.OpenText,
+            headline: { en: "Question 2" },
+            required: false,
+            inputType: "text",
+            charLimit: { enabled: false },
+          },
+        ],
+      },
+      {
+        id: "block2",
+        name: "Block 2",
+        elements: [
+          {
+            id: "q3",
+            type: TSurveyElementTypeEnum.OpenText,
+            headline: { en: "Question 3" },
+            required: false,
+            inputType: "text",
+            charLimit: { enabled: false },
+          },
+        ],
+      },
+    ],
+  };
+
+  test("should find block containing the element", () => {
+    const block = findBlockByElementId(survey.blocks, "q1");
+    expect(block).toBeDefined();
+    expect(block?.id).toBe("block1");
+
+    const block2 = findBlockByElementId(survey.blocks, "q3");
+    expect(block2).toBeDefined();
+    expect(block2?.id).toBe("block2");
+  });
+
+  test("should return undefined for non-existent element", () => {
+    const block = findBlockByElementId(survey.blocks, "nonexistent");
+    expect(block).toBeUndefined();
+  });
+});
+
+describe("isRTL", () => {
+  test("returns true for RTL text", () => {
+    expect(isRTL("مرحبا")).toBe(true);
+    expect(isRTL("שלום")).toBe(true);
+  });
+
+  test("returns false for LTR text", () => {
+    expect(isRTL("Hello")).toBe(false);
+    expect(isRTL("")).toBe(false);
+  });
+});
+
+describe("isRTLLanguage", () => {
+  test("returns true for RTL language codes when multi-language enabled", () => {
+    const survey: TJsWorkspaceStateSurvey = {
+      ...baseMockSurvey,
+      languages: [
+        {
+          language: {
+            id: "l1",
+            code: "ar",
+            alias: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            workspaceId: "p1",
+          },
+          default: true,
+          enabled: true,
+        },
+      ],
+    } as TJsWorkspaceStateSurvey;
+    expect(isRTLLanguage(survey, "ar")).toBe(true);
+    expect(isRTLLanguage(survey, "he")).toBe(true);
+  });
+
+  test("returns false for LTR language codes", () => {
+    const survey: TJsWorkspaceStateSurvey = {
+      ...baseMockSurvey,
+      languages: [
+        {
+          language: {
+            id: "l1",
+            code: "en",
+            alias: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            workspaceId: "p1",
+          },
+          default: true,
+          enabled: true,
+        },
+      ],
+    } as TJsWorkspaceStateSurvey;
+    expect(isRTLLanguage(survey, "en")).toBe(false);
+  });
+
+  test("checks survey content when no languages configured", () => {
+    const survey: TJsWorkspaceStateSurvey = {
+      ...baseMockSurvey,
+      blocks: [
+        {
+          id: "block1",
+          name: "Block 1",
+          elements: [
+            {
+              id: "q1",
+              type: TSurveyElementTypeEnum.OpenText,
+              headline: { default: "مرحبا" },
+              required: false,
+              inputType: "text",
+              charLimit: { enabled: false },
+            },
+          ],
+        },
+      ],
+    } as TJsWorkspaceStateSurvey;
+    expect(isRTLLanguage(survey, "default")).toBe(true);
+  });
+});
+
+describe("cn", () => {
+  test("joins multiple classes", () => {
+    expect(cn("foo", "bar")).toBe("foo bar");
+  });
+
+  test("filters out undefined values", () => {
+    expect(cn("foo", undefined, "bar")).toBe("foo bar");
+  });
+
+  test("filters out empty strings", () => {
+    expect(cn("foo", "", "bar")).toBe("foo bar");
+  });
+
+  test("merges conflicting tailwind classes (last wins)", () => {
+    expect(cn("mb-6", "mb-8")).toBe("mb-8");
+  });
+
+  test("merges conflicting min-h classes", () => {
+    expect(cn("min-h-40", "min-h-0")).toBe("min-h-0");
+  });
+
+  test("merges conflicting padding classes", () => {
+    expect(cn("p-4", "p-2")).toBe("p-2");
+  });
+
+  test("keeps non-conflicting classes", () => {
+    expect(cn("mb-6 block rounded-md", "w-1/4")).toBe("mb-6 block rounded-md w-1/4");
+  });
+
+  test("handles single class", () => {
+    expect(cn("foo")).toBe("foo");
+  });
+
+  test("handles no arguments", () => {
+    expect(cn()).toBe("");
+  });
+
+  test("handles all undefined", () => {
+    expect(cn(undefined, undefined)).toBe("");
+  });
+
+  test("handles nested arrays of classes", () => {
+    expect(cn(["foo", ["foo", ["foo", "bar"]]])).toBe("foo foo foo bar");
+  });
+
+  test("handles nulls, booleans and undefined values", () => {
+    expect(cn(null, true, false, undefined, [null, true, false, undefined])).toBe("");
+  });
+});

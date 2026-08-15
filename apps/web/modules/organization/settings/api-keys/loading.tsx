@@ -1,0 +1,57 @@
+"use client";
+
+import { useTranslation } from "react-i18next";
+import { PageContentWrapper } from "@/modules/ui/components/page-content-wrapper";
+import { PageHeader } from "@/modules/ui/components/page-header";
+
+const LoadingCard = () => {
+  const { t } = useTranslation();
+  return (
+    <div className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white py-4 shadow-xs">
+      <div className="grid content-center border-b border-slate-200 px-4 pb-4 text-left text-slate-900">
+        <h3 className="h-6 w-full max-w-56 animate-pulse rounded-lg bg-slate-100 text-lg leading-6 font-medium">
+          <span className="sr-only">{t("common.loading")}</span>
+        </h3>
+        <p className="mt-3 h-4 w-full max-w-80 animate-pulse rounded-lg bg-slate-100 text-sm text-slate-500">
+          <span className="sr-only">{t("common.loading")}</span>
+        </p>
+      </div>
+      <div className="w-full">
+        <div className="rounded-lg px-4 pt-4">
+          <div className="rounded-lg border border-slate-200">
+            <div className="grid h-12 grid-cols-10 content-center rounded-t-lg bg-slate-100 px-6 text-left text-sm font-semibold text-slate-900">
+              <div className="col-span-4 sm:col-span-2">{t("common.label")}</div>
+              <div className="col-span-4 hidden sm:col-span-5 sm:block">
+                {t("workspace.api_keys.api_key")}
+              </div>
+              <div className="col-span-4 sm:col-span-2">{t("common.created_at")}</div>
+            </div>
+            <div className="px-6">
+              <div className="my-4 h-5 w-full animate-pulse rounded-full bg-slate-200">
+                <span className="sr-only">{t("common.loading")}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-start">
+            <div className="mt-4 flex h-8 w-44 animate-pulse flex-col items-center justify-center rounded-md bg-black text-sm text-white">
+              {t("common.loading")}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Loading = () => {
+  const { t } = useTranslation();
+  return (
+    <PageContentWrapper>
+      <PageHeader pageTitle={t("common.api_keys")} />
+      <div className="mt-4 flex max-w-4xl animate-pulse items-center gap-y-4 rounded-lg border bg-blue-50 p-6 text-sm text-blue-900 shadow-xs md:gap-y-0 md:text-base"></div>
+      <LoadingCard />
+    </PageContentWrapper>
+  );
+};
+
+export default Loading;

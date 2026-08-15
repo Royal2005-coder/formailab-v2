@@ -1,0 +1,46 @@
+import { cache as reactCache } from "react";
+import { AuthenticationError, ResourceNotFoundError } from "@formbricks/types/errors";
+import { getMembershipByUserIdOrganizationId } from "@/lib/membership/service";
+import { getAccessFlags } from "@/lib/membership/utils";
+import { getOrganization } from "@/lib/organization/service";
+import { getTranslate } from "@/lingodotdev/server";
+import { getSession } from "@/modules/auth/lib/session";
+import { TOrganizationAuth } from "../types/organization-auth";
+
+/**
+ * Common utility to fetch organization data and perform authorization checks
+ *
+ * Usage:
+ *   const { session, organization, ... } = await getOrganizationAuth(params.organizationId);
+ */
+export const getOrganizationAuth = reactCache(async (organizationId: string): Promise<TOrganizationAuth> => {
+  const t = await getTranslate();
+
+  // Perform all fetches in parallel
+  const [session, organization] = await Promise.all([getSession(), getOrganization(organizationId)]);
+
+  if (!session) {
+    throw new AuthenticationError(t("common.not_authenticated"));
+  }
+
+  if (!organization) {
+    throw new ResourceNotFoundError(t("common.organization"), organizationId);
+  }
+
+  const currentUserMembership = await getMembershipByUserIdOrganizationId(session?.user.id, organization.id);
+  if (!currentUserMembership) {
+    throw new ResourceNotFoundError(t("common.membership"), null);
+  }
+
+  const { isMember, isOwner, isManager, isBilling } = getAccessFlags(currentUserMembership?.role);
+
+  return {
+    organization,
+    session,
+    currentUserMembership,
+    isMember,
+    isOwner,
+    isManager,
+    isBilling,
+  };
+});

@@ -1,0 +1,8 @@
+class,type/scale,name,relevance,text,help,language,mandatory,order,calculation
+S,,AILAB_DEMO,,,,en-US,,0,
+G,,PROFILE,,,,en-US,,1,
+Q,L,ROLE,,What is your role?,Choose one,en-US,Y,1,
+A,,student,,,,en-US,,,
+A,,researcher,,,,en-US,,,
+Q,N,AGE,ROLE == "student",How old are you?,Whole years,en-US,N,2,
+V,number,SCORE,,,,en-US,,,sum(AGE)

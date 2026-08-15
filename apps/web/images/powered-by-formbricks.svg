@@ -1,0 +1,8 @@
+<svg width="641" height="200" viewBox="0 0 641 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .sub { font-family: system-ui, -apple-system, sans-serif; font-size: 36px; font-weight: 500; fill: #64748B; }
+    .brand { font-family: system-ui, -apple-system, sans-serif; font-size: 72px; font-weight: 800; fill: #0284C7; letter-spacing: -1px; }
+  </style>
+  <text x="320" y="65" text-anchor="middle" class="sub">powered by</text>
+  <text x="320" y="155" text-anchor="middle" class="brand">AI LAB Survey</text>
+</svg>

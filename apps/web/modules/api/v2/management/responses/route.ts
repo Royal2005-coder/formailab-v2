@@ -1,0 +1,186 @@
+import { NextRequest } from "next/server";
+import { Response } from "@formbricks/database/prisma";
+import { sendToPipeline } from "@/app/lib/pipelines";
+import { formatValidationErrorsForV2Api, validateResponseData } from "@/modules/api/lib/validation";
+import { authenticatedApiClient } from "@/modules/api/v2/auth/authenticated-api-client";
+import { validateOtherOptionLengthForMultipleChoice } from "@/modules/api/v2/lib/element";
+import { responses } from "@/modules/api/v2/lib/response";
+import { handleApiError } from "@/modules/api/v2/lib/utils";
+import { getWorkspaceId } from "@/modules/api/v2/management/lib/helper";
+import { getResponseForPipeline } from "@/modules/api/v2/management/responses/[responseId]/lib/response";
+import { getSurveyQuestions } from "@/modules/api/v2/management/responses/[responseId]/lib/survey";
+import { ZGetResponsesFilter, ZResponseInput } from "@/modules/api/v2/management/responses/types/responses";
+import { ApiErrorResponseV2 } from "@/modules/api/v2/types/api-error";
+import { hasPermission } from "@/modules/organization/settings/api-keys/lib/utils";
+import { resolveStorageUrlsInObject, validateFileUploads } from "@/modules/storage/utils";
+import { createResponseWithQuotaEvaluation, getResponses } from "./lib/response";
+
+export const GET = async (request: NextRequest) =>
+  authenticatedApiClient({
+    request,
+    schemas: {
+      query: ZGetResponsesFilter,
+    },
+    handler: async ({ authentication, parsedInput }) => {
+      const { query } = parsedInput;
+
+      if (!query) {
+        return handleApiError(request, {
+          type: "bad_request",
+          details: [{ field: "query", issue: "missing" }],
+        });
+      }
+
+      const workspaceIds = [
+        ...new Set(authentication.workspacePermissions.map((permission) => permission.workspaceId)),
+      ];
+
+      const workspaceResponses: Response[] = [];
+      const res = await getResponses(workspaceIds, query);
+
+      if (!res.ok) {
+        return handleApiError(request, res.error);
+      }
+
+      workspaceResponses.push(...res.data.data);
+
+      return responses.successResponse({
+        data: workspaceResponses.map((r) => ({ ...r, data: resolveStorageUrlsInObject(r.data) })),
+      });
+    },
+  });
+
+export const POST = async (request: Request) =>
+  authenticatedApiClient({
+    request,
+    schemas: {
+      body: ZResponseInput,
+    },
+    handler: async ({ authentication, parsedInput, auditLog }) => {
+      const { body } = parsedInput;
+
+      if (!body) {
+        return handleApiError(
+          request,
+          {
+            type: "bad_request",
+            details: [{ field: "body", issue: "missing" }],
+          },
+          auditLog
+        );
+      }
+
+      const workspaceIdResult = await getWorkspaceId(body.surveyId, false);
+
+      if (!workspaceIdResult.ok) {
+        return handleApiError(request, workspaceIdResult.error, auditLog);
+      }
+
+      const { workspaceId } = workspaceIdResult.data;
+
+      if (!hasPermission(authentication.workspacePermissions, workspaceId, "POST")) {
+        return handleApiError(
+          request,
+          {
+            type: "unauthorized",
+          },
+          auditLog
+        );
+      }
+
+      if (body.createdAt && !body.updatedAt) {
+        body.updatedAt = body.createdAt;
+      }
+
+      const surveyQuestions = await getSurveyQuestions(body.surveyId);
+      if (!surveyQuestions.ok) {
+        return handleApiError(request, surveyQuestions.error as ApiErrorResponseV2, auditLog); // NOSONAR
+      }
+
+      if (!validateFileUploads(body.data, surveyQuestions.data.questions)) {
+        return handleApiError(
+          request,
+          {
+            type: "bad_request",
+            details: [{ field: "response", issue: "Invalid file upload response" }],
+          },
+          auditLog
+        );
+      }
+
+      const otherResponseInvalidQuestionId = validateOtherOptionLengthForMultipleChoice({
+        responseData: body.data,
+        surveyQuestions: surveyQuestions.data.questions,
+        responseLanguage: body.language ?? undefined,
+      });
+
+      if (otherResponseInvalidQuestionId) {
+        return handleApiError(request, {
+          type: "bad_request",
+          details: [
+            {
+              field: "response",
+              issue: `Response for question ${otherResponseInvalidQuestionId} exceeds character limit`,
+              meta: {
+                questionId: otherResponseInvalidQuestionId,
+              },
+            },
+          ],
+        });
+      }
+
+      const validationErrors = validateResponseData(
+        surveyQuestions.data.blocks,
+        body.data,
+        body.language ?? "en",
+        surveyQuestions.data.questions
+      );
+
+      if (validationErrors) {
+        return handleApiError(
+          request,
+          {
+            type: "bad_request",
+            details: formatValidationErrorsForV2Api(validationErrors),
+          },
+          auditLog
+        );
+      }
+
+      const createResponseResult = await createResponseWithQuotaEvaluation(workspaceId, body);
+      if (!createResponseResult.ok) {
+        return handleApiError(request, createResponseResult.error, auditLog);
+      }
+
+      getResponseForPipeline(createResponseResult.data.id)
+        .then((createdResponseForPipeline) => {
+          if (createdResponseForPipeline.ok) {
+            sendToPipeline({
+              event: "responseCreated",
+              workspaceId,
+              surveyId: body.surveyId,
+              response: createdResponseForPipeline.data,
+            }).catch(() => {});
+
+            if (createResponseResult.data.finished) {
+              sendToPipeline({
+                event: "responseFinished",
+                workspaceId,
+                surveyId: body.surveyId,
+                response: createdResponseForPipeline.data,
+              }).catch(() => {});
+            }
+          }
+        })
+        .catch(() => {});
+
+      if (auditLog) {
+        auditLog.targetId = createResponseResult.data.id;
+        auditLog.newObject = createResponseResult.data;
+      }
+
+      return responses.createdResponse({ data: createResponseResult.data });
+    },
+    action: "created",
+    targetType: "response",
+  });

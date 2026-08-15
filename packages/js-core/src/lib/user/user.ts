@@ -1,0 +1,53 @@
+import { Config } from "@/lib/common/config";
+import { Logger } from "@/lib/common/logger";
+import { tearDown } from "@/lib/common/setup";
+import { UpdateQueue } from "@/lib/user/update-queue";
+import { type ApiErrorResponse, type Result, okVoid } from "@/types/error";
+
+const MAX_USER_ID_LENGTH = 255;
+
+export const setUserId = async (userId: string): Promise<Result<void, ApiErrorResponse>> => {
+  const appConfig = Config.getInstance();
+  const logger = Logger.getInstance();
+  const updateQueue = UpdateQueue.getInstance();
+
+  const {
+    data: { userId: currentUserId },
+  } = appConfig.get().user;
+
+  // Validate the new userId before mutating any state, so an invalid replacement
+  // does not tear down the existing valid user.
+  if (userId.length > MAX_USER_ID_LENGTH) {
+    logger.error(`UserId exceeds maximum length of ${String(MAX_USER_ID_LENGTH)} characters`);
+    return okVoid();
+  }
+
+  // If the same userId is already set, no-op
+  if (currentUserId === userId) {
+    logger.debug("UserId is already set to the same value, skipping");
+    return okVoid();
+  }
+
+  // If a different userId is set, clean up the previous user state first
+  if (currentUserId) {
+    logger.debug("Different userId is being set, cleaning up previous user state");
+    tearDown();
+  }
+
+  updateQueue.updateUserId(userId);
+  void updateQueue.processUpdates();
+  return okVoid();
+};
+
+export const logout = (): Result<void> => {
+  try {
+    const logger = Logger.getInstance();
+
+    logger.debug("Logging out and cleaning user state");
+    tearDown();
+
+    return okVoid();
+  } catch {
+    return { ok: false, error: new Error("Failed to logout") };
+  }
+};

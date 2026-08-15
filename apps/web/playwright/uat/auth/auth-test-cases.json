@@ -1,0 +1,110 @@
+[
+  {
+    "checkpoint": "Không tạo session trùng và không chuyển sang workspace của user khác.",
+    "expected": "Đăng nhập thành công, tạo đúng một session và mở workspace của tài khoản.",
+    "id": "AUTH-001",
+    "precondition": "Tài khoản email active, đã xác minh và có workspace.",
+    "sampleInput": "Email: uat-auth-<run>-001@example.com; Password: UatAuth001!; callbackUrl: /workspaces/<workspaceId>",
+    "title": "Đăng nhập đúng email và mật khẩu",
+    "type": "N"
+  },
+  {
+    "checkpoint": "Không tạo session.",
+    "expected": "Không đăng nhập; trả lỗi thông tin đăng nhập chung, rõ ràng.",
+    "id": "AUTH-002",
+    "precondition": "Tài khoản email active, đã xác minh.",
+    "sampleInput": "Email hợp lệ; Password: WrongPass999!",
+    "title": "Sai mật khẩu",
+    "type": "A"
+  },
+  {
+    "checkpoint": "Thông báo giống AUTH-002, không có session và không lộ dữ liệu user.",
+    "expected": "Không đăng nhập; phản hồi không tiết lộ email có tồn tại hay không.",
+    "id": "AUTH-003",
+    "precondition": "Email chưa tồn tại trong database.",
+    "sampleInput": "Email: uat-auth-<run>-missing@example.com; Password: WrongPass999!",
+    "title": "Email chưa đăng ký",
+    "type": "A"
+  },
+  {
+    "checkpoint": "Không gửi request /api/auth/sign-in/email.",
+    "expected": "Trình duyệt/form đánh dấu đúng trường bắt buộc và chặn submit.",
+    "id": "AUTH-004",
+    "precondition": "Trang đăng nhập và email auth mở được.",
+    "sampleInput": "Lần 1: email trống; lần 2: password trống.",
+    "title": "Bỏ trống trường bắt buộc",
+    "type": "B"
+  },
+  {
+    "checkpoint": "Không còn session database và không đọc được workspace sau logout.",
+    "expected": "Session bị xóa; route bảo vệ chuyển lại trang đăng nhập.",
+    "id": "AUTH-005",
+    "precondition": "User đã đăng nhập và đang ở workspace.",
+    "sampleInput": "Mở user menu > Log out > mở lại /workspaces/<workspaceId>.",
+    "title": "Đăng xuất",
+    "type": "N"
+  },
+  {
+    "checkpoint": "Email được chuẩn hóa lowercase; không tự đăng nhập trước khi xác minh.",
+    "expected": "Tạo đúng một user và một credential account, sau đó đi theo flow xác minh cấu hình.",
+    "id": "AUTH-006",
+    "precondition": "Public signup/email auth bật; SMTP test sẵn sàng khi xác minh email bật.",
+    "sampleInput": "Name: UAT AUTH 006; Email: uat-auth-<run>-006@example.com; Password: UatAuth006!",
+    "title": "Đăng ký tài khoản hợp lệ",
+    "type": "N"
+  },
+  {
+    "checkpoint": "Số user/account của email không tăng.",
+    "expected": "Không tạo user hoặc credential account thứ hai; UI giữ phản hồi an toàn chống enumeration.",
+    "id": "AUTH-007",
+    "precondition": "Email đã có đúng một user và credential account.",
+    "sampleInput": "Email trùng khác hoa/thường; Password: UatAuth007!",
+    "title": "Đăng ký bằng email đã tồn tại",
+    "type": "A"
+  },
+  {
+    "checkpoint": "Không lưu user/password lỗi.",
+    "expected": "Form chặn password yếu, không gửi request; sau khi sửa password hợp lệ thì cho submit.",
+    "id": "AUTH-008",
+    "precondition": "Trang đăng ký mở được.",
+    "sampleInput": "Password lỗi: weak; Password sửa: UatAuth008!",
+    "title": "Mật khẩu không đạt yêu cầu",
+    "type": "B"
+  },
+  {
+    "checkpoint": "Email/link liên quan đúng user; nếu thiếu MailHog thì case được ghi Blocked.",
+    "expected": "UI xác nhận yêu cầu và MailHog nhận email reset đúng user, chứa link reset.",
+    "id": "AUTH-009",
+    "precondition": "PASSWORD_RESET_DISABLED=0, SMTP và MailHog test hoạt động.",
+    "sampleInput": "Email active: uat-auth-<run>-009@example.com; MailHog: UAT_MAILHOG_URL.",
+    "title": "Yêu cầu quên mật khẩu",
+    "type": "N"
+  },
+  {
+    "checkpoint": "Hash credential trước và sau giống nhau.",
+    "expected": "Không đổi mật khẩu; UI báo link không còn hợp lệ.",
+    "id": "AUTH-010",
+    "precondition": "Password reset bật; user email có credential password hiện hữu.",
+    "sampleInput": "Token: uat-invalid-reset-token; New password: UatAuth010New!",
+    "title": "Reset link hết hạn hoặc không hợp lệ",
+    "type": "A"
+  },
+  {
+    "checkpoint": "Không tạo user trùng; nếu thiếu cấu hình provider thì case được ghi Blocked.",
+    "expected": "Hoàn tất provider consent, trở lại app và mapping đúng một user/account.",
+    "id": "AUTH-011",
+    "precondition": "OAuth test provider và test account được cấu hình bằng biến UAT_OAUTH_*.",
+    "sampleInput": "Provider button/username/password/selectors lấy từ UAT_OAUTH_*; không lưu secret trong code hoặc Excel.",
+    "title": "Đăng nhập OAuth thành công",
+    "type": "N"
+  },
+  {
+    "checkpoint": "Không có nội dung riêng tư trong response/page.",
+    "expected": "Chuyển tới /auth/login với callbackUrl an toàn và không hiển thị tên workspace riêng tư.",
+    "id": "AUTH-012",
+    "precondition": "Browser context không có cookie/session; có workspace riêng tư làm sentinel.",
+    "sampleInput": "GET /workspaces/<privateWorkspaceId> rồi refresh khi chưa đăng nhập.",
+    "title": "Truy cập route bảo vệ khi chưa đăng nhập",
+    "type": "A"
+  }
+]

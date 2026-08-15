@@ -1,0 +1,20 @@
+{
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "icons": [
+    {
+      "sizes": "192x192",
+      "src": "/favicon/android-chrome-192x192.png",
+      "type": "image/png"
+    },
+    {
+      "sizes": "512x512",
+      "src": "/favicon/android-chrome-512x512.png",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "name": "AILAB Survey",
+  "short_name": "AILAB",
+  "theme_color": "#ffffff"
+}

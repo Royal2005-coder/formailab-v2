@@ -1,0 +1,44 @@
+class,type/scale,name,relevance,text,help,language,mandatory,order,value,other
+S,,language,1,,,vi,,0,
+S,,format,1,G,,vi,,0,
+S,,showprogress,1,Y,,vi,,0,
+S,,datestamp,1,Y,,vi,,0,
+SL,,surveyls_title,1,Mẫu Khảo sát & Đánh giá Thích ứng Chuẩn Formbricks AI Lab (1 Tab CSV Full),Mẫu file CSV nhập khẩu 1 tab chuẩn LimeSurvey hỗ trợ rẽ nhánh theo năm học và rẽ nhánh theo xếp loại điểm %,vi,,0,
+G,,G1_PROFILE,1,Phần 1: Phân loại đối tượng & Năm học,Nhóm phân loại ban đầu để rẽ nhánh theo năm học,vi,,0,
+Q,L,BANK,1,Bạn muốn thực hiện bộ đánh giá nào?,Chọn bộ đánh giá thích ứng,vi,Y,0,
+A,,BANK_B1,1,VSAIC Readiness (Tự đánh giá sẵn sàng),,vi,,0,B1
+A,,BANK_B2,1,VSAIC Competency (Đánh giá năng lực theo năm học),,vi,,1,B2
+Q,L,YEAR,"{BANK == ""B2""}",Bạn là sinh viên năm mấy?,Rẽ nhánh bộ đề theo từng năm học,vi,Y,1,
+A,,YEAR_1,1,Sinh viên Năm 1,,vi,,0,1
+A,,YEAR_2,1,Sinh viên Năm 2,,vi,,1,2
+A,,YEAR_3,1,Sinh viên Năm 3,,vi,,2,3
+A,,YEAR_4,1,Sinh viên Năm 4,,vi,,3,4
+G,,G2_YEAR_1,"{BANK == ""B2"" and YEAR == ""1""}",Phần 2A: Bộ đề kiểm tra kiến thức cho Sinh viên Năm 1,Bộ câu hỏi thích ứng dành riêng cho Sinh viên Năm 1,vi,,1,
+Q,L,Q101,"{BANK == ""B2"" and YEAR == ""1""}",Công cụ AI dạng notebook nghiên cứu nào hỗ trợ tải tài liệu và hỏi đáp trực tiếp?,Chọn 1 đáp án chính xác nhất,vi,Y,0,
+A,,Q101_A,1,ChatGPT Web,,vi,,0,A
+A,,Q101_B,1,NotebookLM (Đáp án đúng),,vi,,1,B
+A,,Q101_C,1,Claude 3.5 Sonnet,,vi,,2,C
+Q,5,Q102,"{BANK == ""B2"" and YEAR == ""1""}",Mức độ tự tin ứng dụng AI vào việc tự học?,Đánh giá thang điểm từ 1 đến 5,vi,Y,1,
+Q,F,Q103,"{BANK == ""B2"" and YEAR == ""1""}",Ma trận tự đánh giá năng lực AI cơ bản,Đánh giá mức độ thành thạo kỹ năng,vi,Y,2,
+SQ,,Q103_SQ1,1,Kỹ năng thiết kế Prompt chính xác,,vi,,0,
+SQ,,Q103_SQ2,1,Kỹ năng phát hiện và sửa thông tin sai sót của AI,,vi,,1,
+A,,Q103_C1,1,Mới bắt đầu (Cơ bản),,vi,,0,1
+A,,Q103_C2,1,Thành thạo (Nâng cao),,vi,,1,2
+G,,G3_YEAR_2,"{BANK == ""B2"" and (YEAR == ""2"" or YEAR == ""3"" or YEAR == ""4"")}",Phần 2B: Bộ đề nâng cao cho Sinh viên Năm 2 trở lên,Bộ câu hỏi thích ứng dành cho Sinh viên Năm 2 - 4,vi,,2,
+Q,L,Q201,"{BANK == ""B2"" and (YEAR == ""2"" or YEAR == ""3"" or YEAR == ""4"")}",Kỹ thuật nào giúp giảm thiểu hiện tượng ảo giác (Hallucination) của LLM?,Chọn đáp án đúng,vi,Y,0,
+A,,Q201_A,1,RAG - Retrieval-Augmented Generation (Đáp án đúng),,vi,,0,A
+A,,Q201_B,1,Tăng nhiệt độ (Temperature),,vi,,1,B
+A,,Q201_C,1,Giảm độ dài prompt,,vi,,2,C
+Q,5,Q202,"{BANK == ""B2"" and (YEAR == ""2"" or YEAR == ""3"" or YEAR == ""4"")}",Đánh giá mức độ thành thạo tích hợp API AI vào ứng dụng thực tế?,Thang điểm 1-5,vi,Y,1,
+G,,G4_RESULT,"{BANK == ""B2""}",Phần 3: Kết quả Điểm số & Rẻo nhánh theo xếp loại,Tính toán điểm phần trăm và chuyển hướng theo 3 phân loại điểm,vi,,3,
+Q,*,SCORE,"{BANK == ""B2""}",Điểm số: {SCORE}/100,Hàm tính điểm phần trăm tự động từ câu hỏi kiểm tra,vi,N,0,"round((if(YEAR==""1"", if(Q101==""B"",1,0) + Q102.NAOK/5, if(Q201==""A"",1,0) + Q202.NAOK/5) / 2) * 100, 1)"
+Q,L,BRANCH_EXCELLENT,"{SCORE >= 80}",Chúc mừng! Bạn đạt Xếp loại Xuất sắc (>= 80%). Bạn có muốn đăng ký cấp Giấy khen/Chứng chỉ AI LAB?,Nhánh dành riêng cho sinh viên đạt điểm Xuất sắc,vi,N,1,
+A,,BRANCH_EXCELLENT_Y,1,Có, Đăng ký cấp chứng chỉ ngay,,vi,,0,Y
+A,,BRANCH_EXCELLENT_N,1,Chưa, Để sau,,vi,,1,N
+Q,L,BRANCH_GOOD,"{SCORE >= 50 and SCORE < 80}",Bạn đạt Xếp loại Khá/Trung bình (50% - 79%). Bạn có muốn thử lại bài đánh giá nâng cao không?,Nhánh dành cho sinh viên đạt mức Đạt,vi,N,2,
+A,,BRANCH_GOOD_Y,1,Có, Tôi muốn thử sức lại,,vi,,0,Y
+A,,BRANCH_GOOD_N,1,Không, Tôi giữ kết quả này,,vi,,1,N
+Q,L,BRANCH_REMEDIAL,"{SCORE < 50}",Kết quả dưới 50% (Cần bổ trợ). Bạn có muốn đăng ký tham gia khóa học bổ trợ kiến thức AI căn bản miễn phí không?,Nhánh dành cho sinh viên cần bổ trợ kiến thức,vi,N,3,
+A,,BRANCH_REMEDIAL_Y,1,Có, Đăng ký khóa học bổ trợ miễn phí,,vi,,0,Y
+A,,BRANCH_REMEDIAL_N,1,Chưa, Tôi tự ôn tập lại,,vi,,1,N
+V,,VCSCORE,1,VCSCORE,,vi,,0,SCORE

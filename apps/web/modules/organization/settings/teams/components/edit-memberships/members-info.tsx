@@ -1,0 +1,141 @@
+"use client";
+
+import { useTranslation } from "react-i18next";
+import { TMember, TOrganizationRole } from "@formbricks/types/memberships";
+import { TOrganization } from "@formbricks/types/organizations";
+import { getAccessFlags } from "@/lib/membership/utils";
+import { formatDateWithOrdinal } from "@/lib/utils/datetime";
+import { EditMembershipRole } from "@/modules/ee/role-management/components/edit-membership-role";
+import { MemberActions } from "@/modules/organization/settings/teams/components/edit-memberships/member-actions";
+import { isInviteExpired } from "@/modules/organization/settings/teams/lib/utils";
+import { TInvite } from "@/modules/organization/settings/teams/types/invites";
+import { Badge } from "@/modules/ui/components/badge";
+import { TooltipRenderer } from "@/modules/ui/components/tooltip";
+
+interface MembersInfoProps {
+  organization: TOrganization;
+  members: TMember[];
+  invites: TInvite[];
+  currentUserRole: TOrganizationRole;
+  currentUserId: string;
+  isAccessControlAllowed: boolean;
+  isFormbricksCloud: boolean;
+  isUserManagementDisabledFromUi: boolean;
+}
+
+// Type guard to check if member is an invitee
+const isInvitee = (member: TMember | TInvite): member is TInvite => {
+  return (member as TInvite).expiresAt !== undefined;
+};
+
+export const MembersInfo = ({
+  organization,
+  invites,
+  currentUserRole,
+  members,
+  currentUserId,
+  isAccessControlAllowed,
+  isFormbricksCloud,
+  isUserManagementDisabledFromUi,
+}: MembersInfoProps) => {
+  const allMembers = [...members, ...invites];
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? i18n.language ?? "en-US";
+
+  const getMembershipBadge = (member: TMember | TInvite) => {
+    if (isInvitee(member)) {
+      return isInviteExpired(member) ? (
+        <Badge type="gray" text="Expired" size="tiny" data-testid="expired-badge" />
+      ) : (
+        <TooltipRenderer
+          tooltipContent={`${t("workspace.settings.general.invite_expires_on", {
+            date: formatDateWithOrdinal(member.expiresAt, locale),
+          })}`}>
+          <Badge type="warning" text="Pending" size="tiny" />
+        </TooltipRenderer>
+      );
+    }
+
+    if (!member.isActive) {
+      return <Badge type="gray" text="Inactive" size="tiny" />;
+    }
+
+    return <Badge type="success" text="Active" size="tiny" />;
+  };
+
+  const { isOwner, isManager } = getAccessFlags(currentUserRole);
+  const isOwnerOrManager = isOwner || isManager;
+
+  const doesOrgHaveMoreThanOneOwner = allMembers.filter((member) => member.role === "owner").length > 1;
+
+  const showDeleteButton = (member: TMember | TInvite) => {
+    if (isInvitee(member)) {
+      return isOwnerOrManager;
+    }
+
+    if (!isOwnerOrManager) {
+      return false;
+    }
+
+    if (member.userId === currentUserId) {
+      return false;
+    }
+
+    if (isManager) {
+      return member.role !== "owner";
+    }
+
+    if (member.role === "owner") {
+      return doesOrgHaveMoreThanOneOwner;
+    }
+
+    return true;
+  };
+
+  return (
+    <div className="max-w-full space-y-4 px-4 py-3" id="membersInfoWrapper">
+      {allMembers.map((member) => (
+        <div
+          id="singleMemberInfo"
+          className="grid w-full max-w-full grid-cols-12 items-center gap-x-4 text-left text-sm text-slate-900"
+          key={member.email}>
+          <div className="ph-no-capture col-span-2 overflow-hidden">
+            <p className="w-full truncate">{member.name}</p>
+          </div>
+          <div className="ph-no-capture col-span-3 overflow-hidden">
+            <p className="w-full truncate"> {member.email}</p>
+          </div>
+
+          {isAccessControlAllowed && allMembers?.length > 0 && (
+            <div className="ph-no-capture col-span-2">
+              <EditMembershipRole
+                currentUserRole={currentUserRole}
+                memberRole={member.role}
+                memberId={!isInvitee(member) ? member.userId : ""}
+                organizationId={organization.id}
+                userId={currentUserId}
+                memberAccepted={!isInvitee(member) ? member.accepted : undefined}
+                inviteId={isInvitee(member) ? member.id : ""}
+                doesOrgHaveMoreThanOneOwner={doesOrgHaveMoreThanOneOwner}
+                isFormbricksCloud={isFormbricksCloud}
+                isUserManagementDisabledFromUi={isUserManagementDisabledFromUi}
+              />
+            </div>
+          )}
+          <div className="col-span-2 flex items-center">{getMembershipBadge(member)}</div>
+
+          {!isUserManagementDisabledFromUi && (
+            <div className="col-span-3">
+              <MemberActions
+                organization={organization}
+                member={isInvitee(member) ? undefined : member}
+                invite={isInvitee(member) ? member : undefined}
+                showDeleteButton={showDeleteButton(member)}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};

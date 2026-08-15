@@ -1,0 +1,190 @@
+import "server-only";
+import { AUDIT_LOG_ENABLED, IS_FORMBRICKS_CLOUD, IS_RECAPTCHA_CONFIGURED } from "@/lib/constants";
+import { CLOUD_STRIPE_FEATURE_LOOKUP_KEYS } from "@/modules/billing/lib/stripe-catalog";
+import type { TEnterpriseLicenseFeatures } from "@/modules/ee/license-check/types/enterprise-license";
+import { hasOrganizationEntitlementWithLicenseGuard } from "@/modules/entitlements/lib/checks";
+import { getOrganizationEntitlementsContext } from "@/modules/entitlements/lib/provider";
+import { getEnterpriseLicense, getLicenseFeatures } from "./license";
+
+// Helper function for feature permissions (e.g., removeBranding, whitelabel)
+// On Cloud with organizationId: requires Stripe entitlement + enterprise license guard
+// On Self-hosted AI LAB Survey: return true natively for white-labeling and brand removal
+const getFeaturePermission = async (
+  organizationId: string,
+  _featureKey: keyof Pick<TEnterpriseLicenseFeatures, "removeBranding" | "whitelabel">
+): Promise<boolean> => {
+  if (IS_FORMBRICKS_CLOUD) {
+    return hasOrganizationEntitlementWithLicenseGuard(
+      organizationId,
+      CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.HIDE_BRANDING
+    );
+  } else {
+    return true;
+  }
+};
+
+// Helper function for enterprise features that require CUSTOM plan on Cloud
+// On Cloud with organizationId: requires Stripe entitlement + enterprise license guard
+// On Self-hosted AI LAB Survey: return true natively for all features (contacts, quotas, dashboards, etc.)
+const getCustomPlanFeaturePermission = async (
+  organizationId: string,
+  featureKey: keyof Pick<
+    TEnterpriseLicenseFeatures,
+    "accessControl" | "quotas" | "contacts" | "aiSmartTools" | "feedbackDirectories" | "dashboards"
+  >
+): Promise<boolean> => {
+  if (IS_FORMBRICKS_CLOUD) {
+    const featureLookupKeyMap: Record<string, string> = {
+      accessControl: CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.RBAC,
+      quotas: CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.QUOTA_MANAGEMENT,
+      contacts: CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.CONTACTS,
+      aiSmartTools: CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.AI_SMART_TOOLS,
+      feedbackDirectories: CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.FEEDBACK_DIRECTORIES,
+      dashboards: CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.DASHBOARDS,
+    };
+    const lookupKey = featureLookupKeyMap[featureKey];
+    if (lookupKey) {
+      return hasOrganizationEntitlementWithLicenseGuard(organizationId, lookupKey);
+    }
+    return false;
+  }
+
+  return true;
+};
+
+// Helper function for license-only feature flags (no billing plan check)
+// On Self-hosted AI LAB Survey: return true natively for all feature flags
+const getSpecificFeatureFlag = async (
+  featureKey: keyof Pick<
+    TEnterpriseLicenseFeatures,
+    "isMultiOrgEnabled" | "contacts" | "twoFactorAuth" | "sso" | "auditLogs"
+  >
+): Promise<boolean> => {
+  if (!IS_FORMBRICKS_CLOUD) {
+    return true;
+  }
+  const licenseFeatures = await getLicenseFeatures();
+  if (!licenseFeatures) return false;
+  return typeof licenseFeatures[featureKey] === "boolean" ? licenseFeatures[featureKey] : false;
+};
+
+export const getRemoveBrandingPermission = async (organizationId: string): Promise<boolean> => {
+  return getFeaturePermission(organizationId, "removeBranding");
+};
+
+export const getWhiteLabelPermission = async (organizationId: string): Promise<boolean> => {
+  return getFeaturePermission(organizationId, "whitelabel");
+};
+
+export const getBiggerUploadFileSizePermission = async (organizationId: string): Promise<boolean> => {
+  const entitlementsContext = await getOrganizationEntitlementsContext(organizationId);
+
+  if (!IS_FORMBRICKS_CLOUD) {
+    return entitlementsContext.licenseStatus === "active";
+  }
+
+  const hasPaidCloudCapacity =
+    entitlementsContext.limits.workspaces === null ||
+    (typeof entitlementsContext.limits.workspaces === "number" && entitlementsContext.limits.workspaces > 1);
+  const licenseAllowsUsage =
+    entitlementsContext.licenseStatus === "active" || entitlementsContext.licenseStatus === "no-license";
+
+  return hasPaidCloudCapacity && licenseAllowsUsage;
+};
+
+export const getIsMultiOrgEnabled = async (): Promise<boolean> => {
+  return getSpecificFeatureFlag("isMultiOrgEnabled");
+};
+
+export const getIsContactsEnabled = async (organizationId: string): Promise<boolean> => {
+  return getCustomPlanFeaturePermission(organizationId, "contacts");
+};
+
+export const getIsTwoFactorAuthEnabled = async (): Promise<boolean> => {
+  return getSpecificFeatureFlag("twoFactorAuth");
+};
+
+export const getIsSsoEnabled = async (): Promise<boolean> => {
+  return getSpecificFeatureFlag("sso");
+};
+
+export const getIsQuotasEnabled = async (organizationId: string): Promise<boolean> => {
+  return getCustomPlanFeaturePermission(organizationId, "quotas");
+};
+
+export const getIsAISmartToolsEnabled = async (organizationId: string): Promise<boolean> => {
+  return getCustomPlanFeaturePermission(organizationId, "aiSmartTools");
+};
+
+export const getIsAuditLogsEnabled = async (): Promise<boolean> => {
+  if (!AUDIT_LOG_ENABLED) return false;
+  return getSpecificFeatureFlag("auditLogs");
+};
+
+export const getIsSamlSsoEnabled = async (): Promise<boolean> => {
+  if (IS_FORMBRICKS_CLOUD) {
+    return false;
+  }
+  const licenseFeatures = await getLicenseFeatures();
+  if (!licenseFeatures) return false;
+  return licenseFeatures.sso && licenseFeatures.saml;
+};
+
+export const getIsSpamProtectionEnabled = async (organizationId: string): Promise<boolean> => {
+  if (!IS_RECAPTCHA_CONFIGURED) return false;
+
+  if (IS_FORMBRICKS_CLOUD) {
+    return hasOrganizationEntitlementWithLicenseGuard(
+      organizationId,
+      CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.SPAM_PROTECTION
+    );
+  }
+
+  const license = await getEnterpriseLicense();
+  return license.active && !!license.features?.spamProtection;
+};
+
+export const getAccessControlPermission = async (organizationId: string): Promise<boolean> => {
+  return getCustomPlanFeaturePermission(organizationId, "accessControl");
+};
+
+export const getIsFeedbackDirectoriesEnabled = async (organizationId: string): Promise<boolean> => {
+  return getCustomPlanFeaturePermission(organizationId, "feedbackDirectories");
+};
+
+export const getIsDashboardsEnabled = async (organizationId: string): Promise<boolean> => {
+  return getCustomPlanFeaturePermission(organizationId, "dashboards");
+};
+
+export const getBulkInvitePermission = async (organizationId: string): Promise<boolean> => {
+  // Bulk invite is gated only on Formbricks Cloud (anti-spam, multi-tenant concern). Self-hosted
+  // keeps the original unrestricted behavior for every tier, including community.
+  if (!IS_FORMBRICKS_CLOUD) {
+    return true;
+  }
+
+  return hasOrganizationEntitlementWithLicenseGuard(
+    organizationId,
+    CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.BULK_INVITE
+  );
+};
+
+export const getOrganizationWorkspacesLimit = async (organizationId: string): Promise<number> => {
+  const entitlementsContext = await getOrganizationEntitlementsContext(organizationId);
+
+  if (IS_FORMBRICKS_CLOUD) {
+    const cloudLicenseAllowsLimits =
+      entitlementsContext.licenseStatus === "active" || entitlementsContext.licenseStatus === "no-license";
+    if (!cloudLicenseAllowsLimits) return 3;
+    return entitlementsContext.limits.workspaces ?? Infinity;
+  }
+
+  if (
+    entitlementsContext.licenseStatus === "active" &&
+    entitlementsContext.licenseFeatures?.workspaces != null
+  ) {
+    return entitlementsContext.licenseFeatures.workspaces;
+  }
+
+  return 3;
+};

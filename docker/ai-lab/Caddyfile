@@ -1,0 +1,27 @@
+:8080 {
+    @keycloak path /realms/* /resources/*
+
+    handle @keycloak {
+        reverse_proxy surveyops-keycloak-public:8080 {
+            header_up Host {host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto https
+        }
+    }
+
+    # MinIO reachable from browsers through the same public origin so presigned
+    # upload URLs work for remote clients (same-origin, no CORS needed).
+    @minio path /upload/*
+    handle @minio {
+        uri strip_prefix /upload
+        reverse_proxy surveyops-minio:9000
+    }
+
+    handle {
+        reverse_proxy formbricks-ai-lab-staging:3000 {
+            header_up Host {host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto https
+        }
+    }
+}

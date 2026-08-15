@@ -1,0 +1,194 @@
+import { logger } from "@formbricks/logger";
+import { TResponse, TResponseInput, ZResponseInput } from "@formbricks/types/responses";
+import { resolveBodyIds } from "@/app/api/v1/management/lib/workspace-resolver";
+import { handleApiError } from "@/app/lib/api/handle-api-error";
+import { RequestBodyTooLargeError, parseJsonBodyWithLimit } from "@/app/lib/api/request-body";
+import { responses } from "@/app/lib/api/response";
+import { transformErrorToDetails } from "@/app/lib/api/validator";
+import { withV1ApiWrapper } from "@/app/lib/api/with-api-logging";
+import { sendToPipeline } from "@/app/lib/pipelines";
+import { getSurvey } from "@/lib/survey/service";
+import { formatValidationErrorsForV1Api, validateResponseData } from "@/modules/api/lib/validation";
+import { hasPermission } from "@/modules/organization/settings/api-keys/lib/utils";
+import { resolveStorageUrlsInObject, validateFileUploads } from "@/modules/storage/utils";
+import { createResponseWithQuotaEvaluation, getResponses, getResponsesByWorkspaceIds } from "./lib/response";
+
+export const GET = withV1ApiWrapper({
+  handler: async ({ req, authentication }) => {
+    if (!authentication || !("apiKeyId" in authentication)) {
+      return { response: responses.notAuthenticatedResponse() };
+    }
+
+    const searchParams = req.nextUrl.searchParams;
+    const surveyId = searchParams.get("surveyId");
+    const limit = searchParams.get("limit") ? Number(searchParams.get("limit")) : undefined;
+    const offset = searchParams.get("skip") ? Number(searchParams.get("skip")) : undefined;
+
+    try {
+      let allResponses: TResponse[] = [];
+
+      if (surveyId) {
+        const survey = await getSurvey(surveyId);
+        if (!survey) {
+          return {
+            response: responses.notFoundResponse("Survey", surveyId, true),
+          };
+        }
+        if (!hasPermission(authentication.workspacePermissions, survey.workspaceId, "GET")) {
+          return {
+            response: responses.unauthorizedResponse(),
+          };
+        }
+        const surveyResponses = await getResponses(surveyId, limit, offset);
+        allResponses.push(...surveyResponses);
+      } else {
+        const workspaceIds = [
+          ...new Set(authentication.workspacePermissions.map((permission) => permission.workspaceId)),
+        ];
+        const workspaceResponses = await getResponsesByWorkspaceIds(workspaceIds, limit, offset);
+        allResponses.push(...workspaceResponses);
+      }
+      return {
+        response: responses.successResponse(
+          allResponses.map((r) => ({ ...r, data: resolveStorageUrlsInObject(r.data) }))
+        ),
+      };
+    } catch (error) {
+      return handleApiError(error);
+    }
+  },
+});
+
+const validateSurvey = async (responseInput: TResponseInput, workspaceId: string) => {
+  const survey = await getSurvey(responseInput.surveyId);
+  if (!survey) {
+    return { error: responses.notFoundResponse("Survey", responseInput.surveyId, true) };
+  }
+  if (survey.workspaceId !== workspaceId) {
+    return {
+      error: responses.badRequestResponse(
+        "Survey is part of another workspace",
+        {
+          workspaceId,
+        },
+        true
+      ),
+    };
+  }
+  return { survey };
+};
+
+export const POST = withV1ApiWrapper({
+  handler: async ({ req, auditLog, authentication }) => {
+    if (!authentication || !("apiKeyId" in authentication)) {
+      return { response: responses.notAuthenticatedResponse() };
+    }
+
+    try {
+      let jsonInput;
+      try {
+        jsonInput = await parseJsonBodyWithLimit<Record<string, unknown>>(req);
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return {
+            response: responses.payloadTooLargeResponse("Payload Too Large", { error: error.message }),
+          };
+        }
+
+        logger.error({ error, url: req.url }, "Error parsing JSON input");
+        return {
+          response: responses.badRequestResponse("Malformed JSON input, please check your request body"),
+        };
+      }
+
+      // Accept workspaceId as alternative to environmentId — resolve to production environment
+      const resolved = await resolveBodyIds(jsonInput, authentication.workspacePermissions, "POST");
+      if (!resolved.ok) return { response: resolved.response };
+
+      const inputValidation = ZResponseInput.safeParse(resolved.body);
+      if (!inputValidation.success) {
+        return {
+          response: responses.badRequestResponse(
+            "Fields are missing or incorrectly formatted",
+            transformErrorToDetails(inputValidation.error),
+            true
+          ),
+        };
+      }
+
+      const responseInput = inputValidation.data;
+
+      if (
+        !resolved.alreadyAuthorized &&
+        !hasPermission(authentication.workspacePermissions, responseInput.workspaceId, "POST")
+      ) {
+        return { response: responses.unauthorizedResponse() };
+      }
+
+      const surveyResult = await validateSurvey(responseInput, responseInput.workspaceId);
+      if (surveyResult.error) {
+        return {
+          response: surveyResult.error,
+        };
+      }
+
+      if (!validateFileUploads(responseInput.data, surveyResult.survey.questions)) {
+        return {
+          response: responses.badRequestResponse("Invalid file upload response"),
+        };
+      }
+
+      // Validate response data against validation rules
+      const validationErrors = validateResponseData(
+        surveyResult.survey.blocks,
+        responseInput.data,
+        responseInput.language ?? "en",
+        surveyResult.survey.questions
+      );
+
+      if (validationErrors) {
+        return {
+          response: responses.badRequestResponse(
+            "Validation failed",
+            formatValidationErrorsForV1Api(validationErrors),
+            true
+          ),
+        };
+      }
+
+      if (responseInput.createdAt && !responseInput.updatedAt) {
+        responseInput.updatedAt = responseInput.createdAt;
+      }
+
+      const response = await createResponseWithQuotaEvaluation(responseInput);
+      if (auditLog) {
+        auditLog.targetId = response.id;
+        auditLog.newObject = response;
+      }
+
+      await sendToPipeline({
+        event: "responseCreated",
+        workspaceId: surveyResult.survey.workspaceId,
+        surveyId: response.surveyId,
+        response: response,
+      });
+
+      if (response.finished) {
+        await sendToPipeline({
+          event: "responseFinished",
+          workspaceId: surveyResult.survey.workspaceId,
+          surveyId: response.surveyId,
+          response: response,
+        });
+      }
+
+      return {
+        response: responses.successResponse(response, true),
+      };
+    } catch (error) {
+      return handleApiError(error);
+    }
+  },
+  action: "created",
+  targetType: "response",
+});

@@ -1,0 +1,51 @@
+import { redirect } from "next/navigation";
+import { AuthenticationError, AuthorizationError, ResourceNotFoundError } from "@formbricks/types/errors";
+import { canUserAccessOrganization } from "@/lib/organization/auth";
+import { getOrganization } from "@/lib/organization/service";
+import { getUser } from "@/lib/user/service";
+import { getTranslate } from "@/lingodotdev/server";
+import { getSession } from "@/modules/auth/lib/session";
+import { ToasterClient } from "@/modules/ui/components/toaster-client";
+
+const WorkspaceOnboardingLayout = async (props: {
+  params: Promise<{ organizationId: string }>;
+  children: React.ReactNode;
+}) => {
+  const params = await props.params;
+
+  const { children } = props;
+
+  const t = await getTranslate();
+  const session = await getSession();
+
+  if (!session?.user) {
+    return redirect(
+      `/auth/login?callbackUrl=${encodeURIComponent(`/organizations/${params.organizationId}`)}`
+    );
+  }
+
+  const user = await getUser(session.user.id);
+  if (!user) {
+    throw new AuthenticationError(t("common.not_authenticated"));
+  }
+
+  const isAuthorized = await canUserAccessOrganization(session.user.id, params.organizationId);
+
+  if (!isAuthorized) {
+    throw new AuthorizationError(t("common.not_authorized"));
+  }
+
+  const organization = await getOrganization(params.organizationId);
+  if (!organization) {
+    throw new ResourceNotFoundError(t("common.organization"), params.organizationId);
+  }
+
+  return (
+    <div className="flex-1 bg-slate-50">
+      <ToasterClient />
+      {children}
+    </div>
+  );
+};
+
+export default WorkspaceOnboardingLayout;

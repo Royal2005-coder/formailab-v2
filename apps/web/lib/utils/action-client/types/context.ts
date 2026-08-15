@@ -1,0 +1,38 @@
+import { TUser } from "@formbricks/types/user";
+
+export type AuditLoggingCtx = {
+  organizationId?: string;
+  ipAddress: string;
+  segmentId?: string;
+  oldObject?: Record<string, unknown> | null;
+  newObject?: Record<string, unknown> | null;
+  eventId?: string;
+  surveyId?: string;
+  tagId?: string;
+  webhookId?: string;
+  userId?: string;
+  workspaceId?: string;
+  languageId?: string;
+  inviteId?: string;
+  membershipId?: string;
+  actionClassId?: string;
+  contactId?: string;
+  apiKeyId?: string;
+  responseId?: string;
+  quotaId?: string;
+  teamId?: string;
+  integrationId?: string;
+  chartId?: string;
+  dashboardId?: string;
+  dashboardWidgetId?: string;
+  feedbackDirectoryId?: string;
+};
+
+export type ActionClientCtx = {
+  auditLoggingCtx: AuditLoggingCtx;
+  user?: TUser;
+};
+
+export type AuthenticatedActionClientCtx = ActionClientCtx & {
+  user: TUser;
+};

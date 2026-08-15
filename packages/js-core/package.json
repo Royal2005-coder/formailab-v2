@@ -1,0 +1,57 @@
+{
+  "name": "@formbricks/js-core",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "version": "1.0.0",
+  "description": "Js core for Formbricks that contains the logic for executing the @formbricks/js library and is loaded asynchronously over the Formbricks API.",
+  "homepage": "https://formbricks.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/formbricks/formbricks"
+  },
+  "keywords": [
+    "Formbricks",
+    "surveys",
+    "experience management"
+  ],
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "types": "./dist/index.d.ts",
+    "import": "./dist/index.js",
+    "require": "./dist/index.umd.cjs"
+  },
+  "typesVersions": {
+    "*": {
+      "*": [
+        "./dist/index.d.ts"
+      ]
+    }
+  },
+  "scripts": {
+    "dev": "vite build --watch --mode dev",
+    "build": "vite build",
+    "build:dev": "vite build --mode dev",
+    "go": "vite build --watch --mode dev",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "clean": "rimraf .turbo node_modules dist coverage",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "author": "Formbricks <hola@formbricks.com>",
+  "devDependencies": {
+    "@formbricks/config-typescript": "workspace:*",
+    "@formbricks/eslint-config": "workspace:*",
+    "@formbricks/vite-plugins": "workspace:*",
+    "@types/node": "25.4.0",
+    "@vitest/coverage-v8": "4.1.6",
+    "typescript": "5.9.3",
+    "vite": "7.3.5",
+    "vite-plugin-dts": "4.5.4",
+    "vitest": "4.1.6"
+  }
+}

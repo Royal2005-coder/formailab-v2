@@ -84,3 +84,22 @@ stats.html
 /atlas/
 /workspace-infra/
 /workspace-readyx/
+
+# Local design sources, scratch files, and superseded test-bank documents
+/*.drawio.xml
+/bpmn.xml
+/survey_preview.html
+/check_page.js
+/test-page.js
+/query.sql
+/query_blocks.py
+/db-120q-survey.json
+/ChatGPT Image*.png
+/00_AILAB_All_Test_Banks_Adaptive_Formbricks_READY.csv
+/AILAB_120Q_Advanced_Adaptive_Template_2026.xlsx
+/Formbricks_AUT_TestCase.xlsx
+/Template_test_case*.xls
+/Testbank/*.docx
+/Testbank/Ent_AIG.xlsx
+/Testbank/Scripts.xlsx
+*.orig

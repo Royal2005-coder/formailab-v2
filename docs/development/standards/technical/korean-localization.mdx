@@ -1,0 +1,119 @@
+---
+title: Korean Localization
+description: Add, generate, validate, and release the Korean application locale with Lingo and Gemini.
+icon: languages
+---
+
+## Current implementation
+
+The application supports standard South Korean Korean with the canonical locale code `ko-KR`. Users can
+select **Korean (한국어)** in **Account → Your Profile → Language**.
+
+The implementation covers:
+
+- User locale validation through `ZUserLocale`.
+- The application locale allowlist and profile language selector.
+- Korean date-distance formatting through the `date-fns` `ko` locale.
+- A complete `apps/web/locales/ko-KR.json` catalog generated from `en-US`.
+- Lingo translation generation with the Google Gemini provider.
+
+## Source of truth
+
+English is the only translation source that developers edit manually:
+
+```text
+apps/web/locales/en-US.json
+```
+
+Do not manually add or translate keys in `ko-KR.json`. Lingo generates target locale files and the
+translation scanner verifies that their keys match `en-US`.
+
+Korean support is declared in these files:
+
+| File | Responsibility |
+| --- | --- |
+| `packages/types/user.ts` | Runtime and TypeScript user-locale contract |
+| `apps/web/lib/constants.ts` | Application locale allowlist |
+| `apps/web/lib/i18n/utils.ts` | `Korean (한국어)` profile selector label |
+| `apps/web/lib/time.ts` | Korean relative-time formatting |
+| `apps/web/i18n.json` | Lingo target, Gemini model, and Korean translation prompt |
+| `apps/web/locales/ko-KR.json` | Generated Korean catalog |
+| `apps/web/vitestSetup.ts` | Test environment locale allowlist |
+
+No database migration is required because `User.locale` is stored as a string and validated by the
+application contract.
+
+## Gemini configuration
+
+The web translation configuration uses the raw Google provider:
+
+```json
+{
+  "id": "google",
+  "model": "gemini-2.5-flash-lite",
+  "settings": {
+    "temperature": 0
+  }
+}
+```
+
+The prompt requires standard South Korean spelling, a professional polite interface tone, and exact
+preservation of ICU variables, HTML, Markdown, URLs, product names, and technical terms.
+
+The application accepts `GEMINI_API_KEY`, while the Lingo raw Google provider expects `GOOGLE_API_KEY`.
+Map the existing credential only for the translation process; never commit either value:
+
+```bash
+pnpm exec dotenv -e .env -- sh -c \
+  'export GOOGLE_API_KEY="$GEMINI_API_KEY"; pnpm i18n:web:generate'
+```
+
+## Adding future translation keys
+
+1. Add or update user-facing strings only in `apps/web/locales/en-US.json`.
+2. Run the web translation generator with the Gemini environment mapping above.
+3. Run the repository translation scanner.
+4. Review the Korean output for preserved variables and product terminology.
+5. Commit `en-US.json`, generated locale changes, and `apps/web/i18n.lock` together when the lockfile changes.
+
+```bash
+pnpm i18n:validate
+pnpm --filter @formbricks/web typecheck
+pnpm --filter @formbricks/web test --run lib/utils/locale.test.ts lib/time.test.ts
+```
+
+The source and Korean catalogs must contain the same key count. Missing Korean keys block release.
+
+## Large catalog recovery
+
+The web catalog contains thousands of values. If Gemini returns concatenated or malformed JSON for a
+single large request, do not hand-write Korean translations and do not accept an empty generated file.
+
+Use Lingo to translate smaller top-level namespaces independently, merge the generated namespace objects,
+then rebuild the lockfile:
+
+```bash
+pnpm --filter @formbricks/web exec npx lingo.dev@latest lockfile --force
+pnpm i18n:validate
+```
+
+Before committing, verify:
+
+- `ko-KR.json` parses as JSON.
+- Its flattened key set exactly matches `en-US.json`.
+- Korean values contain Hangul where translation is expected.
+- ICU placeholders and markup remain unchanged.
+- No API key appears in the diff.
+
+## Release QA
+
+1. Deploy the commit containing the locale declarations and generated catalog.
+2. Open **Account → Your Profile → Language**.
+3. Select **Korean (한국어)** and save the profile.
+4. Confirm navigation, authentication, workspace settings, surveys, and validation messages render in Korean.
+5. Confirm relative dates use Korean formatting.
+6. Reload the application and verify the persisted locale remains `ko-KR`.
+7. Switch back to another locale and confirm there is no stale Korean text.
+
+The application loads locale catalogs dynamically, so a missing `ko-KR.json` causes a runtime locale-load
+failure even when the profile selector accepts `ko-KR`.
